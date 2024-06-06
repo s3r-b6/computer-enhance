@@ -215,7 +215,7 @@ int main(int argc, char *argv[]) {
   memset(&instBuff[0], 0, sizeof(instBuff));
 
   long read = fread(&instBuff[0], sizeof(u8), 1024, fd);
-  printf("READ %ld bytes\n", read);
+  // printf("READ %ld bytes\n", read);
 
   decode(&instBuff[0], read);
 
