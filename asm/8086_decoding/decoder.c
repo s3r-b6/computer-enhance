@@ -1,4 +1,3 @@
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -7,6 +6,36 @@
 #define u8 uint8_t
 #define i16 int16_t
 #define u16 uint16_t
+
+void print_byte(u8 byte);
+char *getRegister(u8 byte, u8 wide);
+char *getEffectiveAddress(u8 mem);
+void decode(u8 buff[], u16 size);
+
+int main(int argc, char *argv[]) {
+  if (argc != 2) {
+    printf("USAGE: decoder path_to_file\n");
+    return -1;
+  }
+
+  char *fname = argv[1];
+  FILE *fd = fopen(fname, "r");
+
+  if (!fd) {
+    printf("ERROR: Failed to open file %s\n", fname);
+    return -1;
+  }
+
+  u8 instBuff[1024];
+  memset(&instBuff[0], 0, sizeof(instBuff));
+
+  long read = fread(&instBuff[0], sizeof(u8), 1024, fd);
+  // printf("READ %ld bytes\n", read);
+
+  decode(&instBuff[0], read);
+
+  return 0;
+}
 
 void print_byte(u8 byte) {
   for (int i = 7; i >= 0; i--) {
@@ -21,84 +50,28 @@ void print_byte(u8 byte) {
 
 char *getRegister(u8 byte, u8 wide) {
   u8 reg = byte & 0b11100000 >> 5;
-  switch (reg) {
-  case 0b000:
-    if (wide) {
-      return "ax";
-    }
-    return "al";
-  case 0b001:
-    if (wide) {
-      return "cx";
-    }
-    return "cl";
 
-  case 0b010:
-    if (wide) {
-      return "dx";
-    }
-    return "dl";
+  static char *registersW[] = {"ax", "cx", "dx", "bx", "sp", "bp", "si", "di"};
+  static char *registers[] = {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
 
-  case 0b011:
-    if (wide) {
-      return "bx";
-    }
-    return "bl";
-
-  case 0b100:
-    if (wide) {
-      return "sp";
-    }
-    return "ah";
-  case 0b101:
-    if (wide) {
-      return "bp";
-    }
-    return "ch";
-  case 0b110:
-    if (wide) {
-      return "si";
-    }
-    return "dh";
-  case 0b111:
-    if (wide) {
-      return "di";
-    }
-    return "bh";
+  if (reg > 8) {
+    return "BAD_REG";
   }
 
-  return "BAD_REG";
+  if (wide) {
+    return registersW[reg];
+  }
+  return registers[reg];
 }
 
 char *getEffectiveAddress(u8 mem) {
-  switch (mem) {
-  case 0b000:
-    return "bx+si";
-    break;
-  case 0b001:
-    return "bx+di";
-    break;
-  case 0b010:
-    return "bp+si";
-    break;
-  case 0b011:
-    return "bp+di";
-    break;
-  case 0b100:
-    return "si";
-    break;
-  case 0b101:
-    return "di";
-    break;
-  case 0b110:
-    return "bp";
-    break;
-  case 0b111:
-    return "bx";
-    break;
+  char *addr[] = {"bx+si", "bx+di", "bp+si", "bp+di", "si", "di", "bp", "bx"};
+
+  if (mem > 8) {
+    return "BAD_ADDRESS";
   }
 
-  return "BAD_ADDRESS";
+  return addr[mem];
 }
 
 void decode(u8 buff[], u16 size) {
@@ -195,29 +168,4 @@ void decode(u8 buff[], u16 size) {
       }
     }
   }
-}
-
-int main(int argc, char *argv[]) {
-  if (argc != 2) {
-    printf("USAGE: decoder path_to_file\n");
-    return -1;
-  }
-
-  char *fname = argv[1];
-  FILE *fd = fopen(fname, "r");
-
-  if (!fd) {
-    printf("ERROR: Failed to open file %s\n", fname);
-    return -1;
-  }
-
-  u8 instBuff[1024];
-  memset(&instBuff[0], 0, sizeof(instBuff));
-
-  long read = fread(&instBuff[0], sizeof(u8), 1024, fd);
-  // printf("READ %ld bytes\n", read);
-
-  decode(&instBuff[0], read);
-
-  return 0;
 }
