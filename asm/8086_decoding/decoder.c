@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -7,10 +8,21 @@
 #define i16 int16_t
 #define u16 uint16_t
 
+void decodeInstruction(u8 currByte, u8 *buff, u16 *idx, u16 size);
+
 void print_byte(u8 byte);
 char *getRegister(u8 byte, u8 wide);
 char *getEffectiveAddress(u8 mem);
-void decode(u8 buff[], u16 size);
+
+// MODS
+void immediateToReg(u8 currByte, u8 *buff, u16 *idx);
+void registerModeNoDisp(u8 nextByte, u8 currByte);
+void memoryModeNoDisp(u8 nextByte, u8 currByte);
+void memoryModeWithDisp(u8 nextByte, u8 currByte, u8 *buff, u16 *idx,
+                        bool wideDisp);
+
+#define MOV_IMMEDIATE_TO_REG (currByte & 0b10110000) == 0b10110000
+#define MOV_R_OR_M_TO_OR_FROM_REG (currByte & 0b10001000) == 0b10001000
 
 int main(int argc, char *argv[]) {
   if (argc != 2) {
@@ -26,13 +38,19 @@ int main(int argc, char *argv[]) {
     return -1;
   }
 
-  u8 instBuff[1024];
+  u16 size = 1024;
+
+  u8 instBuff[size];
   memset(&instBuff[0], 0, sizeof(instBuff));
 
-  long read = fread(&instBuff[0], sizeof(u8), 1024, fd);
+  long read = fread(&instBuff[0], sizeof(u8), size, fd);
   // printf("READ %ld bytes\n", read);
 
-  decode(&instBuff[0], read);
+  u16 idx = 0;
+  while (idx < 1024) {
+    u8 currByte = instBuff[idx++];
+    decodeInstruction(currByte, instBuff, &idx, size);
+  }
 
   return 0;
 }
@@ -74,98 +92,99 @@ char *getEffectiveAddress(u8 mem) {
   return addr[mem];
 }
 
-void decode(u8 buff[], u16 size) {
-  u16 idx = 0;
+// Decodes a single instruction
+void decodeInstruction(u8 currByte, u8 *buff, u16 *idx, u16 size) {
+  if (MOV_IMMEDIATE_TO_REG) {
+    printf("mov ");
+    immediateToReg(currByte, buff, idx);
+  } else if (MOV_R_OR_M_TO_OR_FROM_REG) {
+    printf("mov ");
 
-  while (idx < size) {
-    u8 currByte = buff[idx++];
-    if ((currByte & 0b10110000) == 0b10110000) {
-      // Immediate to register
-      u8 reg = currByte & 0b111;
-      u8 wide = currByte & 0b1000;
-
-      char *regN = getRegister(reg, wide);
-
-      if (wide) {
-        u8 b2 = buff[idx++], b1 = buff[idx++];
-        u16 data = (b1 << 8) + b2;
-        printf("mov %s,%u\n", regN, data);
-      } else {
-        u8 data = buff[idx++];
-        printf("mov %s,%u\n", regN, data);
-      }
-    } else if ((currByte & 0b10001000) == 0b10001000) {
-      // REGISTER/MEMORY TO/FROM REGISTER
-      u8 dest = currByte & 0b10;
-      u8 wide = currByte & 0b1;
-
-      u8 nextByte = buff[idx++];
-      u8 mod = nextByte >> 6;
-
-      if (mod == 0b00) { // Memory mode, no displacement unless R/M == 110
-        u8 reg = (nextByte & 0b00111000) >> 3;
-        u8 mem = (nextByte & 0b00000111);
-
-        char *r = getRegister(reg, wide);
-
-        char *from;
-        if (mem == 0b110) {
-          from = "???";
-        } else {
-          from = getEffectiveAddress(mem);
-        }
-
-        if (dest) {
-          printf("mov %s,[%s]\n", r, from);
-        } else {
-          printf("mov [%s],%s\n", from, r);
-        }
-
-      } else if (mod == 0b01) { // Memory mode, 8bit displacement
-        u8 reg = (nextByte & 0b00111000) >> 3;
-        u8 mem = (nextByte & 0b00000111);
-
-        char *r = getRegister(reg, wide);
-        char *addr = getEffectiveAddress(mem);
-        u8 disp = buff[idx++];
-
-        if (dest) {
-          if (disp) {
-            printf("mov %s,[%s+%hu]\n", r, addr, disp);
-          } else {
-            printf("mov %s,[%s]\n", r, addr);
-          }
-        } else {
-          if (disp) {
-            printf("mov [%s+%hu],%s\n", addr, disp, r);
-          } else {
-            printf("mov [%s],%s\n", addr, r);
-          }
-        }
-      } else if (mod == 0b10) { // Memory mode, 16bit displacement
-        u8 reg = (nextByte & 0b00111000) >> 3;
-        u8 mem = (nextByte & 0b00000111);
-
-        char *r = getRegister(reg, wide);
-        char *addr = getEffectiveAddress(mem);
-
-        u8 b2 = buff[idx++], b1 = buff[idx++];
-        u16 disp = (b1 << 8) + b2;
-
-        if (dest) {
-          printf("mov %s,[%s+%hu]\n", r, addr, disp);
-        } else {
-          printf("mov [%s+%hu],%s\n", addr, disp, r);
-        }
-      } else if (mod == 0b11) { // Register mode, no displacement
-        u8 reg = (nextByte & 0b00111000) >> 3;
-        u8 rOrM = (nextByte & 0b00000111);
-
-        char *r1 = getRegister(rOrM, wide);
-        char *r2 = getRegister(reg, wide);
-
-        printf("mov %s,%s\n", r1, r2);
-      }
+    u8 nextByte = buff[(*idx)++];
+    u8 mod = nextByte >> 6;
+    switch (mod) {
+    case 0b00:
+      memoryModeNoDisp(nextByte, currByte);
+      break;
+    case 0b01:
+      memoryModeWithDisp(nextByte, currByte, buff, idx, false);
+      break;
+    case 0b10:
+      memoryModeWithDisp(nextByte, currByte, buff, idx, true);
+      break;
+    case 0b11:
+      registerModeNoDisp(nextByte, currByte);
+      break;
+    default:
+      printf("Error: Unknown addressing mode\n");
     }
   }
+}
+
+void immediateToReg(u8 currByte, u8 *buff, u16 *idx) {
+  u8 reg = currByte & 0b111;
+  u8 wide = (currByte & 0b1000) >> 3;
+
+  char *regN = getRegister(reg, wide);
+  if (wide) {
+    u16 data = (buff[(*idx) + 1] << 8) + buff[(*idx)];
+    printf("%s,%u\n", regN, data);
+    *idx += 2;
+  } else {
+    u8 data = buff[(*idx)++];
+    printf("%s,%u\n", regN, data);
+  }
+}
+
+void memoryModeNoDisp(u8 nextByte, u8 currByte) {
+  u8 dest = (currByte & 0b10) >> 1;
+  u8 wide = currByte & 0b1;
+
+  u8 reg = (nextByte & 0b00111000) >> 3;
+  u8 mem = (nextByte & 0b00000111);
+
+  char *r = getRegister(reg, wide);
+  char *from = (mem == 0b110) ? "???" : getEffectiveAddress(mem);
+
+  if (dest) {
+    printf("%s,[%s]\n", r, from);
+  } else {
+    printf("[%s],%s\n", from, r);
+  }
+}
+
+void memoryModeWithDisp(u8 nextByte, u8 currByte, u8 *buff, u16 *idx,
+                        bool wideDisp) {
+  u8 dest = (currByte & 0b10) >> 1;
+  u8 wide = currByte & 0b1;
+
+  u8 reg = (nextByte & 0b00111000) >> 3;
+  u8 mem = (nextByte & 0b00000111);
+  char *r = getRegister(reg, wide);
+  char *addr = getEffectiveAddress(mem);
+
+  u16 disp = 0;
+  if (!wideDisp) { // 8-bit displacement
+    disp = buff[(*idx)++];
+  } else { // 16-bit displacement
+    disp = (buff[(*idx) + 1] << 8) + buff[(*idx)];
+    *idx += 2;
+  }
+
+  if (dest) {
+    printf("%s,[%s+%hu]\n", r, addr, disp);
+  } else {
+    printf("[%s+%hu],%s\n", addr, disp, r);
+  }
+}
+
+void registerModeNoDisp(u8 nextByte, u8 currByte) {
+  u8 wide = currByte & 0b1;
+  u8 reg = (nextByte & 0b00111000) >> 3;
+  u8 rOrM = (nextByte & 0b00000111);
+
+  char *r1 = getRegister(rOrM, wide);
+  char *r2 = getRegister(reg, wide);
+
+  printf("%s,%s\n", r1, r2);
 }
