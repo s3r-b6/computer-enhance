@@ -3,7 +3,7 @@ gcc ./decoder.c -o decoder.out
 mkdir -p ./builds
 
 diff=false
-for file in *.asm; do
+for file in ./asm/*.asm; do
     base_name=$(basename "$file" .asm)
     nasm "$file" -o "./builds/${base_name}.out"
     ./decoder.out "./builds/${base_name}.out" > tmp.asm
@@ -19,5 +19,4 @@ if ! $diff; then
     printf "NO DIFFERENCES FOUND\n"
 fi
 
-rm -f ./builds/*
 rm -f ./tmp.asm

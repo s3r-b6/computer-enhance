@@ -1,0 +1,4 @@
+[submodule "computer_enhance"]
+	path = computer_enhance
+	url = https://github.com/cmuratori/computer_enhance
+	ignore = dirty

@@ -1,2 +1,3 @@
-asm/8086_decoding/*_ex
-asm/8086_decoding/*.out
+8086_decoding/*_ex
+8086_decoding/*.out
+8086_decoding/builds
